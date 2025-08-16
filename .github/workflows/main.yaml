@@ -81,6 +81,12 @@ jobs:
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ECR_LOGIN_URI: ${{ secrets.AWS_ECR_LOGIN_URI }}
+          ECR_REPOSITORY_NAME: ${{ secrets.ECR_REPOSITORY_NAME }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
@@ -88,20 +94,31 @@ jobs:
           port: 22
           timeout: 600s
           command_timeout: 15m
-          # Fix: Properly pass environment variables
+          # Pass environment variables properly
           envs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_REGION,AWS_ECR_LOGIN_URI,ECR_REPOSITORY_NAME
           script: |
             set -e
         
             echo "=== Starting Deployment ==="
         
-            # Use environment variables directly (they're now properly passed)
-            export AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}"
-            export AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-            export AWS_REGION="${{ secrets.AWS_REGION }}"
-            export AWS_ECR_LOGIN_URI="${{ secrets.AWS_ECR_LOGIN_URI }}"
-            export ECR_REPOSITORY_NAME="${{ secrets.ECR_REPOSITORY_NAME }}"
-            export AWS_DEFAULT_REGION="${{ secrets.AWS_REGION }}"
+            # Export environment variables (they're passed from GitHub Actions)
+            export AWS_DEFAULT_REGION="$AWS_REGION"
+            
+            # Create AWS credentials file to handle special characters properly
+            mkdir -p ~/.aws
+            cat > ~/.aws/credentials << EOF
+[default]
+aws_access_key_id = $AWS_ACCESS_KEY_ID
+aws_secret_access_key = $AWS_SECRET_ACCESS_KEY
+EOF
+            
+            cat > ~/.aws/config << EOF
+[default]
+region = $AWS_REGION
+output = json
+EOF
+            
+            chmod 600 ~/.aws/credentials ~/.aws/config
         
             # Install dependencies
             echo "Installing required packages..."
@@ -149,9 +166,21 @@ jobs:
             echo "Verifying AWS CLI credentials..."
             aws sts get-caller-identity || {
                 echo "Error: AWS CLI cannot access credentials"
-                echo "AWS_ACCESS_KEY_ID length: ${#AWS_ACCESS_KEY_ID}"
-                echo "AWS_SECRET_ACCESS_KEY length: ${#AWS_SECRET_ACCESS_KEY}"
-                exit 1
+                echo "Checking if credentials file exists..."
+                ls -la ~/.aws/
+                echo "Trying with explicit profile..."
+                aws sts get-caller-identity --profile default || {
+                    echo "Still failing. Trying alternative method..."
+                    # Alternative: Use environment variables with proper escaping
+                    unset AWS_PROFILE
+                    export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+                    export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+                    export AWS_DEFAULT_REGION="$AWS_REGION"
+                    aws sts get-caller-identity || {
+                        echo "All methods failed. Check your AWS credentials."
+                        exit 1
+                    }
+                }
             }
         
             # Login to ECR
