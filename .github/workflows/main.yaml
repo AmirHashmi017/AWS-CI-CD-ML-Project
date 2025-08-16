@@ -119,21 +119,21 @@ jobs:
             fi
 
             # Debug: Print environment variables (mask sensitive data)
-            echo "ECR_LOGIN_URI: $ECR_LOGIN_URI"
+            echo "AWS_ECR_LOGIN_URI: $AWS_ECR_LOGIN_URI"
             echo "ECR_REPOSITORY_NAME: $ECR_REPOSITORY_NAME"
             echo "AWS_REGION: $AWS_REGION"
             echo "AWS_ACCESS_KEY_ID: [redacted]"
             echo "AWS_SECRET_ACCESS_KEY: [redacted]"
 
             # Validate environment variables
-            if [ -z "$ECR_LOGIN_URI" ] || [ -z "$ECR_REPOSITORY_NAME" ]; then
-                echo "Error: ECR_LOGIN_URI or ECR_REPOSITORY_NAME is not set"
+            if [ -z "$AWS_ECR_LOGIN_URI" ] || [ -z "$ECR_REPOSITORY_NAME" ]; then
+                echo "Error: AWS_ECR_LOGIN_URI or ECR_REPOSITORY_NAME is not set"
                 exit 1
             fi
 
             # Login to ECR
             echo "Logging into ECR..."
-            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_LOGIN_URI"
+            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ECR_LOGIN_URI"
 
             # Stop and remove existing container
             echo "Stopping existing container..."
@@ -157,7 +157,7 @@ jobs:
 
             # Pull latest image
             echo "Pulling latest image..."
-            docker pull "$ECR_LOGIN_URI/$ECR_REPOSITORY_NAME:latest"
+            docker pull "$AWS_ECR_LOGIN_URI/$ECR_REPOSITORY_NAME:latest"
 
             # Run new container
             echo "Starting new container..."
@@ -170,7 +170,7 @@ jobs:
               -e AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
               -e AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
               -e AWS_REGION="$AWS_REGION" \
-              "$ECR_LOGIN_URI/$ECR_REPOSITORY_NAME:latest"
+              "$AWS_ECR_LOGIN_URI/$ECR_REPOSITORY_NAME:latest"
 
             # Wait for container to start
             echo "Waiting for container to start..."
